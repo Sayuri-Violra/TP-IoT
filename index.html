@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Panneau de contrôle ESP32</title>
+<style>
+  :root {
+    --bg: #0e1512;
+    --panel: #16201c;
+    --line: #26332c;
+    --text: #eaf0ec;
+    --muted: #8fa298;
+    --amber: #e8a13d;
+    --amber-dim: #6b4f24;
+    --green: #4fae76;
+    --off: #2a3530;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  body {
+    padding: env(safe-area-inset-top, 0px) 20px env(safe-area-inset-bottom, 24px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100%;
+  }
+  .wrap { width: 100%; max-width: 420px; }
+
+  header {
+    padding: 28px 4px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  header .label {
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 650;
+    line-height: 1.15;
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--off);
+    transition: background 0.3s;
+  }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.err { background: #c0554a; }
+
+  section { padding: 22px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+  .section-title {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+
+  .leds { display: flex; flex-direction: column; gap: 10px; }
+  .led-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+  }
+  .led-name { font-size: 17px; font-weight: 550; }
+  .led-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .switch {
+    position: relative;
+    width: 52px; height: 30px;
+    border-radius: 999px;
+    background: var(--off);
+    border: none;
+    cursor: pointer;
+    transition: background 0.25s;
+    flex: none;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.25s;
+  }
+  .switch.on { background: var(--amber); }
+  .switch.on::after { transform: translateX(22px); }
+  .switch:disabled { opacity: 0.5; cursor: default; }
+
+  .readings { display: flex; gap: 12px; }
+  .card {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .card .k { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; }
+  .card .v { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .card .v span { font-size: 16px; color: var(--muted); font-weight: 500; }
+
+  footer {
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+  footer code {
+    background: var(--panel);
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-size: 11.5px;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f5;
+      --panel: #ffffff;
+      --line: #e2e6e2;
+      --text: #14201a;
+      --muted: #647267;
+      --off: #dde3de;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="label">Domotique · Firebase</p>
+    <h1>Salle des capteurs</h1>
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Connexion...</span>
+    </div>
+  </header>
+
+  <section>
+    <p class="section-title">Éclairage</p>
+    <div class="leds">
+      <div class="led-row">
+        <div>
+          <div class="led-name">LED 1</div>
+          <div class="led-sub" id="led1sub">—</div>
+        </div>
+        <button class="switch" id="led1switch" disabled></button>
+      </div>
+      <div class="led-row">
+        <div>
+          <div class="led-name">LED 2</div>
+          <div class="led-sub" id="led2sub">—</div>
+        </div>
+        <button class="switch" id="led2switch" disabled></button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="section-title">Dernière mesure</p>
+    <div class="readings">
+      <div class="card">
+        <p class="k">Température</p>
+        <p class="v" id="tempVal">— <span>°C</span></p>
+      </div>
+      <div class="card">
+        <p class="k">Humidité</p>
+        <p class="v" id="humVal">— <span>%</span></p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Relié à <code>controle-leds-b6cbe</code>.<br>
+    Fonctionne uniquement pendant que l'ESP32 (ou la simulation Wokwi) est actif.
+  </footer>
+</div>
+
+<script>
+  const DATABASE_URL = "controle-leds-b6cbe-default-rtdb.europe-west1.firebasedatabase.app";
+  const API_KEY = "AIzaSyBhDBgjLcHL5joUDB2nZs1FmVuCAE4GdkC";
+  const BASE = `https://${DATABASE_URL}/.json?auth=${API_KEY}`;
+  const POLL_MS = 3000;
+
+  const dot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+  const led1switch = document.getElementById("led1switch");
+  const led2switch = document.getElementById("led2switch");
+  const led1sub = document.getElementById("led1sub");
+  const led2sub = document.getElementById("led2sub");
+  const tempVal = document.getElementById("tempVal");
+  const humVal = document.getElementById("humVal");
+
+  let state = { Led_1: false, Led_2: false, temperature: null, humidity: null };
+  let pending = { Led_1: false, Led_2: false };
+
+  function renderSwitch(btn, sub, on) {
+    btn.classList.toggle("on", !!on);
+    btn.disabled = false;
+    sub.textContent = on ? "Allumée" : "Éteinte";
+  }
+
+  function render() {
+    renderSwitch(led1switch, led1sub, state.Led_1);
+    renderSwitch(led2switch, led2sub, state.Led_2);
+    tempVal.innerHTML = (state.temperature != null ? state.temperature.toFixed(1) : "—") + " <span>°C</span>";
+    humVal.innerHTML = (state.humidity != null ? state.humidity.toFixed(1) : "—") + " <span>%</span>";
+  }
+
+  function setStatus(kind, text) {
+    dot.className = "dot" + (kind ? " " + kind : "");
+    statusText.textContent = text;
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch(BASE, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (data) {
+        if (typeof data.Led_1 === "boolean" && !pending.Led_1) state.Led_1 = data.Led_1;
+        if (typeof data.Led_2 === "boolean" && !pending.Led_2) state.Led_2 = data.Led_2;
+        if (typeof data.temperature === "number") state.temperature = data.temperature;
+        if (typeof data.humidity === "number") state.humidity = data.humidity;
+      }
+      setStatus("live", "En ligne");
+      render();
+    } catch (e) {
+      setStatus("err", "Hors ligne — vérifiez que l'ESP32 tourne");
+    }
+  }
+
+  async function toggle(key, btn) {
+    const next = !state[key];
+    pending[key] = true;
+    state[key] = next;
+    btn.disabled = true;
+    render();
+    try {
+      const res = await fetch(BASE, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: next })
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+    } catch (e) {
+      state[key] = !next; // revert on failure
+    } finally {
+      pending[key] = false;
+      render();
+    }
+  }
+
+  led1switch.addEventListener("click", () => toggle("Led_1", led1switch));
+  led2switch.addEventListener("click", () => toggle("Led_2", led2switch));
+
+  refresh();
+  setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>
